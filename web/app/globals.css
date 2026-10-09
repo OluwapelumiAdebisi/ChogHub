@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  background-color: #ffe14d;
+  color: #1b0b3a;
+}
+
+body {
+  /* halftone dots, like a printed comic page */
+  background-image: radial-gradient(#f2c928 1.6px, transparent 1.6px);
+  background-size: 18px 18px;
+  font-family: "Outfit", system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+h1,
+h2,
+h3 {
+  font-family: "Lilita One", system-ui, sans-serif;
+  font-weight: 400;
+  line-height: 0.98;
+}
+
+:focus-visible {
+  outline: 3px solid #6c3bff;
+  outline-offset: 3px;
+}
+
+/* The one orchestrated moment: a badge slaps onto the Chog card when earned. */
+@keyframes slap {
+  0% {
+    transform: scale(1.7) rotate(var(--tilt));
+    opacity: 0;
+  }
+  60% {
+    transform: scale(0.92) rotate(var(--tilt));
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(var(--tilt));
+  }
+}
+.badge-new {
+  animation: slap 440ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .badge-new {
+    animation: none;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full border-3 border-ink px-6 py-2.5 text-[17px] font-extrabold shadow-hard transition-transform active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-x-0 disabled:active:translate-y-0;
+  }
+  .btn-primary {
+    @apply btn bg-grape text-white;
+  }
+  .btn-quiet {
+    @apply btn bg-white text-ink;
+  }
+  .btn-dark {
+    @apply btn bg-ink text-sun shadow-none;
+  }
+  .card {
+    @apply rounded-[24px] border-3 border-ink bg-white shadow-hard-md;
+  }
+  .chip {
+    @apply inline-block rounded-full px-2.5 py-0.5 text-[13px] font-extrabold;
+  }
+  .field {
+    @apply w-full rounded-2xl border-3 border-ink bg-white px-4 py-3 text-ink placeholder:text-ink-soft/70 focus:outline-none focus:ring-4 focus:ring-grape/40;
+  }
+  .title-pop {
+    /* white letters, ink outline, offset shadow */
+    -webkit-text-stroke: 2px #1b0b3a;
+    paint-order: stroke fill;
+    text-shadow: 4px 4px 0 #1b0b3a;
+  }
+}

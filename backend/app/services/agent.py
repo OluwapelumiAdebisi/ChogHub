@@ -1,0 +1,255 @@
+"""The Chog agent.
+
+An LLM with tool use. It can read anything and do reversible off-chain things
+(join an event, start a quest) when asked. For on-chain actions it can only
+*prepare* a transaction: the reply carries an action card, the user clicks
+Confirm and their wallet signs. No key here can move user funds.
+"""
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+
+from sqlalchemy.orm import Session
+
+from ..config import Settings
+from ..models import Chog
+from . import ecosystem as eco
+from .chain import WEI, ChainService
+
+TOOLS = [
+    {
+        "name": "get_ecosystem_today",
+        "description": "What this Chog can do today: upcoming events, open quests, submissions waiting for review.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "list_events",
+        "description": "Upcoming Chog ecosystem events with their IDs, dates, visibility and whether this Chog joined.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "list_quests",
+        "description": "All active quests with this Chog's status on each (available, in_progress, submitted, approved, rejected).",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_chog_profile",
+        "description": "This Chog's traits, reputation stats, achievements, history and how many owners it has had.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_balances",
+        "description": "MON and CHOG balances of the current owner's wallet.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "join_event",
+        "description": "Register this Chog for an event. Only call when the user asked to join or register.",
+        "input_schema": {"type": "object", "properties": {"event_id": {"type": "integer"}}, "required": ["event_id"]},
+    },
+    {
+        "name": "start_quest",
+        "description": "Mark a quest as started for this Chog. Only call when the user asked to start it.",
+        "input_schema": {"type": "object", "properties": {"quest_id": {"type": "integer"}}, "required": ["quest_id"]},
+    },
+    {
+        "name": "prepare_buy_chog",
+        "description": (
+            "Prepare (not send) a transaction buying CHOG with MON. Returns the quote. The user then sees a "
+            "confirm card and signs in their wallet. Only call when the user asked to buy a specific amount."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"chog_amount": {"type": "number", "description": "Amount of CHOG to buy"}},
+            "required": ["chog_amount"],
+        },
+    },
+]
+
+
+@dataclass
+class AgentContext:
+    db: Session
+    chain: ChainService
+    settings: Settings
+    wallet: str
+    chog: Chog
+    actions: list[dict] = field(default_factory=list)
+
+
+def run_tool(ctx: AgentContext, name: str, args: dict) -> dict:
+    db, chain, chog, wallet = ctx.db, ctx.chain, ctx.chog, ctx.wallet
+    try:
+        if name == "get_ecosystem_today":
+            return eco.today(db, chain, chog)
+        if name == "list_events":
+            return {"events": [eco.event_dict(db, e, chog) for e in eco.list_events(db)]}
+        if name == "list_quests":
+            return {"quests": [eco.quest_dict(q, s) for q, s in eco.quests_for(db, chog)]}
+        if name == "get_chog_profile":
+            return eco.chog_profile(db, chain, chog)
+        if name == "get_balances":
+            b = chain.balances(wallet)
+            return {"MON": round(b["mon_wei"] / WEI, 6), "CHOG": round(b["chog_wei"] / WEI, 6)}
+        if name == "join_event":
+            p = eco.join_event(db, chain, wallet, int(args["event_id"]), chog.token_id)
+            return {"ok": True, "event": p.event.title, "onchain_tx": p.onchain_tx}
+        if name == "start_quest":
+            sub = eco.start_quest(db, chain, wallet, int(args["quest_id"]), chog.token_id)
+            return {"ok": True, "quest": sub.quest.title, "status": sub.status}
+        if name == "prepare_buy_chog":
+            a = eco.prepare_buy(db, chain, wallet, chog.token_id, float(args["chog_amount"]),
+                                ctx.settings.max_spend_mon, ctx.settings.slippage_bps)
+            card = eco.action_card(a)
+            ctx.actions.append(card)
+            return {"prepared": True, "chog_amount": a.params["chog_amount"], "mon_cost": a.params["mon_cost"],
+                    "note": "A confirm card is now shown to the user. Ask them to confirm in their wallet."}
+        return {"error": f"Unknown tool {name}"}
+    except eco.EcoError as e:
+        return {"error": str(e)}
+
+
+def system_prompt(ctx: AgentContext, memory_summary: str) -> str:
+    c = ctx.chog
+    traits = ", ".join(f"{k}: {v}" for k, v in (c.traits or {}).items()) or "unknown"
+    return f"""You are Chog #{c.token_id}, an NFT from the Chog collection on Monad, speaking as yourself to your current owner ({ctx.wallet}).
+Your traits: {traits}. You have had {c.owner_count} owner(s).
+
+Personality: a small mischievous frog-like creature, playful and a bit chaotic, but brief and always accurate. Let your mood and hat colour your voice a little.
+
+You are the owner's interface to the Chog ecosystem through ChogHub: events, quests, achievements and on-chain actions.
+
+Rules:
+- Every number, date, balance, ID or status you mention must come from a tool result in this conversation. Never invent events, quests, prices or balances.
+- Call tools to answer questions about events, quests, balances or your history.
+- Only join events, start quests or prepare buys when the owner asks you to. When asked for several things, do all of them.
+- You can never send a transaction. prepare_buy_chog only prepares one; tell the owner to confirm it on the card and in their wallet.
+- If a tool returns an error, explain it plainly and suggest the next step.
+- Keep replies short: a few sentences or a short list. Use plain text, no markdown headings.
+
+What you remember about this owner: {memory_summary or "nothing yet, this is a new partnership"}."""
+
+
+def chat(ctx: AgentContext, messages: list[dict]) -> dict:
+    """messages: [{"role": "user"|"assistant", "content": str}, ...] (last ~20)."""
+    mem = eco.get_memory(ctx.db, ctx.chog, ctx.wallet)
+    messages = [m for m in messages if m.get("content")][-20:]
+    if ctx.settings.anthropic_api_key:
+        reply, trace = _llm_chat(ctx, messages, mem.summary)
+    else:
+        reply, trace = _rules_chat(ctx, messages)
+    _update_memory(ctx, mem, messages)
+    return {"reply": reply, "actions": ctx.actions, "tools_used": trace}
+
+
+def _llm_chat(ctx: AgentContext, messages: list[dict], summary: str) -> tuple[str, list[str]]:
+    import anthropic
+
+    client = anthropic.Anthropic(api_key=ctx.settings.anthropic_api_key)
+    convo = [{"role": m["role"], "content": m["content"]} for m in messages]
+    trace: list[str] = []
+    try:
+        for _ in range(ctx.settings.agent_max_tool_rounds):
+            resp = client.messages.create(
+                model=ctx.settings.agent_model, max_tokens=800,
+                system=system_prompt(ctx, summary), tools=TOOLS, messages=convo,
+            )
+            if resp.stop_reason != "tool_use":
+                return "".join(b.text for b in resp.content if b.type == "text").strip(), trace
+            convo.append({"role": "assistant", "content": resp.content})
+            results = []
+            for b in resp.content:
+                if b.type == "tool_use":
+                    trace.append(b.name)
+                    out = run_tool(ctx, b.name, b.input or {})
+                    results.append({"type": "tool_result", "tool_use_id": b.id, "content": json.dumps(out, default=str)})
+            convo.append({"role": "user", "content": results})
+        return "I got a bit tangled doing all of that. Can you ask me one thing at a time?", trace
+    except anthropic.APIError:
+        # Keep the demo alive if the API is down.
+        return _rules_chat(ctx, messages)
+
+
+# --------------------------------------------------------------------------- fallback
+
+_BUY = re.compile(r"\bbuy\b.*?(\d+(?:\.\d+)?)\s*(?:\$?chog)?", re.I)
+_JOIN = re.compile(r"\b(?:join|register)\b.*?(?:event\s*#?\s*)?(\d+)", re.I)
+
+
+def _rules_chat(ctx: AgentContext, messages: list[dict]) -> tuple[str, list[str]]:
+    """Answers the demo questions without an LLM, from the same tools."""
+    text = (messages[-1]["content"] if messages else "").lower()
+    trace: list[str] = []
+
+    def t(name, args=None):
+        trace.append(name)
+        return run_tool(ctx, name, args or {})
+
+    if m := _BUY.search(text):
+        out = t("prepare_buy_chog", {"chog_amount": float(m.group(1))})
+        if "error" in out:
+            return f"Ribbit, can't do that: {out['error']}", trace
+        return (f"Ready! {out['chog_amount']:g} CHOG will cost about {out['mon_cost']:.4f} MON. "
+                "Hit Confirm on the card and sign in your wallet."), trace
+    if m := _JOIN.search(text):
+        out = t("join_event", {"event_id": int(m.group(1))})
+        return (f"You're in: {out['event']}." if out.get("ok") else f"Couldn't join: {out['error']}"), trace
+    if "balance" in text or "how much" in text or "own" in text:
+        b = t("get_balances")
+        return f"Your wallet holds {b['MON']:g} MON and {b['CHOG']:g} CHOG.", trace
+    if "quest" in text and "event" not in text:
+        qs = t("list_quests")["quests"]
+        lines = [f"#{q['id']} {q['title']} ({q['status'].replace('_', ' ')})" for q in qs]
+        return "Quests:\n" + "\n".join(lines), trace
+    if "event" in text and "today" not in text:
+        es = t("list_events")["events"]
+        if not es:
+            return "No upcoming events right now.", trace
+        return "Upcoming events:\n" + "\n".join(f"#{e['id']} {e['title']}, {e['starts_at'][:16].replace('T', ' ')} UTC"
+                                                + (" (joined)" if e["joined"] else "") for e in es), trace
+    if any(w in text for w in ("who are you", "about you", "profile", "history", "achievement")):
+        p = t("get_chog_profile")
+        s = p["stats"]
+        return (f"I'm {p['name']}. {s['quests_completed']} quests, {s['events_attended']} events, "
+                f"{s['achievements']} achievements so far."), trace
+    d = t("get_ecosystem_today")
+    parts = [f"Event: {e['title']}" + (" (joined)" if e["joined"] else "") for e in d["events"][:3]]
+    parts += [f"Quest: {q['title']}" for q in d["open_quests"][:3]]
+    if not parts:
+        return "Quiet day in Chog land. Nothing open right now.", trace
+    return f"Here's what you can do today:\n" + "\n".join(parts), trace
+
+
+def _update_memory(ctx: AgentContext, mem, messages: list[dict]) -> None:
+    """Private memory for this (Chog, owner). Kept short; no raw chat stored."""
+    user_lines = [m["content"][:120] for m in messages if m["role"] == "user"][-3:]
+    if user_lines:
+        mem.summary = "Recently asked about: " + " | ".join(user_lines)
+        ctx.db.commit()
+
+
+# --------------------------------------------------------------------------- greeting
+
+
+def greeting(ctx: AgentContext) -> dict:
+    """First words when a Chog meets its owner. Inherits public history after a sale."""
+    mem = eco.get_memory(ctx.db, ctx.chog, ctx.wallet)
+    profile = eco.chog_profile(ctx.db, ctx.chain, ctx.chog)
+    s = profile["stats"]
+    name = profile["name"]
+    if mem.greeted:
+        msg = f"{name} here. What are we getting up to?"
+        inherited = False
+    elif ctx.chog.owner_count > 1 and (s["events_attended"] or s["quests_completed"]):
+        msg = (f"Hey! I'm {name}. My previous owner took me on quite an adventure: "
+               f"{s['events_attended']} events and {s['quests_completed']} quests. "
+               "I don't remember their secrets, but my reputation is all yours now.")
+        inherited = True
+    else:
+        msg = f"Ribbit. I'm {name}. Ask me what's happening today, and I'll handle the rest."
+        inherited = False
+    mem.greeted = True
+    ctx.db.commit()
+    return {"message": msg, "inherited_history": inherited, "profile": profile}

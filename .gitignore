@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+cache/
+broadcast/
+contracts/lib/
+*.db
+.env
+.env.local
+__pycache__/
+.pytest_cache/
+*.tsbuildinfo
