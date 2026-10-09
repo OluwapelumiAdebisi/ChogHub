@@ -82,7 +82,7 @@ INTENTS: list[tuple[str, re.Pattern]] = [
     ("badges", re.compile(r"\b(badge|badges|achievement|achievements|sticker|reputation|stats|history|story)\b")),
     ("whoami", re.compile(r"\b(who are you|about you|your name|your traits|tell me about yourself|what are you|traits)\b")),
     ("help", re.compile(r"\b(help|what can you do|how does this work|commands|what do you do)\b")),
-    ("today", re.compile(r"\b(today|happening|what can i do|what'?s on|what'?s new|anything to do|up to)\b")),
+    ("today", re.compile(r"\b(today|happening|what can i do|what should i do|what do i do|where do i start|where should i start|first|next step|recommend|suggest|what'?s on|what'?s new|anything to do|up to)\b")),
     ("events", re.compile(r"\b(events?|schedule|calendar|when is|meetup|spaces|competition)\b")),
     ("quests", re.compile(r"\b(quests?|missions?|tasks?|challenges?)\b")),
     ("greet", re.compile(r"^\s*(hi|hey|hello|yo|gm|good (morning|afternoon|evening)|sup|wassup|ribbit)\b")),

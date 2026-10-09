@@ -8,6 +8,7 @@ Confirm and their wallet signs. No key here can move user funds.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 
@@ -144,11 +145,34 @@ def chat(ctx: AgentContext, messages: list[dict]) -> dict:
     return {"reply": reply, "actions": ctx.actions, "tools_used": trace}
 
 
+# Last LLM failure, shown on /health so problems are visible without server logs.
+LAST_AGENT_ERROR: dict | None = None
+log = logging.getLogger("choghub.agent")
+
+
+def _clean_convo(messages: list[dict]) -> list[dict]:
+    """The API needs a conversation that starts with the user and alternates roles.
+    The site's history starts with the Chog's greeting, so drop leading assistant
+    turns and merge back-to-back messages from the same side."""
+    convo: list[dict] = []
+    for m in messages:
+        if not convo and m["role"] != "user":
+            continue
+        if convo and convo[-1]["role"] == m["role"]:
+            convo[-1]["content"] += "\n\n" + m["content"]
+        else:
+            convo.append({"role": m["role"], "content": m["content"]})
+    return convo
+
+
 def _llm_chat(ctx: AgentContext, messages: list[dict], summary: str) -> tuple[str, list[str]]:
+    global LAST_AGENT_ERROR
     import anthropic
 
     client = anthropic.Anthropic(api_key=ctx.settings.anthropic_api_key)
-    convo = [{"role": m["role"], "content": m["content"]} for m in messages]
+    convo = _clean_convo(messages)
+    if not convo:
+        return _rules_chat(ctx, messages)
     trace: list[str] = []
     try:
         for _ in range(ctx.settings.agent_max_tool_rounds):
@@ -167,8 +191,9 @@ def _llm_chat(ctx: AgentContext, messages: list[dict], summary: str) -> tuple[st
                     results.append({"type": "tool_result", "tool_use_id": b.id, "content": json.dumps(out, default=str)})
             convo.append({"role": "user", "content": results})
         return "I got a bit tangled doing all of that. Can you ask me one thing at a time?", trace
-    except anthropic.APIError:
-        # Keep the demo alive if the API is down.
+    except Exception as e:  # keep the demo alive whatever the API does
+        LAST_AGENT_ERROR = {"type": type(e).__name__, "message": str(e)[:300]}
+        log.warning("LLM agent failed, using rules agent: %s", LAST_AGENT_ERROR)
         return _rules_chat(ctx, messages)
 
 

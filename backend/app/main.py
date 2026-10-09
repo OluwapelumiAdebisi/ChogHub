@@ -37,7 +37,16 @@ app.include_router(admin.router)
 
 @app.get("/health")
 def health():
-    return {"ok": True, "network": settings.network, "chain_mode": settings.chain_mode}
+    from .services import agent
+
+    return {
+        "ok": True,
+        "network": settings.network,
+        "chain_mode": settings.chain_mode,
+        "agent": "claude" if settings.anthropic_api_key else "rules",
+        "agent_model": settings.agent_model if settings.anthropic_api_key else None,
+        "last_agent_error": agent.LAST_AGENT_ERROR,
+    }
 
 
 # ---- dev-only helpers for the in-memory chain (CHAIN_MODE=fake) ----
