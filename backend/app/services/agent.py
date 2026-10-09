@@ -174,52 +174,19 @@ def _llm_chat(ctx: AgentContext, messages: list[dict], summary: str) -> tuple[st
 
 # --------------------------------------------------------------------------- fallback
 
-_BUY = re.compile(r"\bbuy\b.*?(\d+(?:\.\d+)?)\s*(?:\$?chog)?", re.I)
-_JOIN = re.compile(r"\b(?:join|register)\b.*?(?:event\s*#?\s*)?(\d+)", re.I)
-
-
 def _rules_chat(ctx: AgentContext, messages: list[dict]) -> tuple[str, list[str]]:
-    """Answers the demo questions without an LLM, from the same tools."""
-    text = (messages[-1]["content"] if messages else "").lower()
+    """No-LLM agent: understands everyday phrasing and runs the same tools."""
+    from .rules_agent import respond
+
+    text = messages[-1]["content"] if messages else ""
+    last_assistant = next((m["content"] for m in reversed(messages[:-1]) if m["role"] == "assistant"), "")
     trace: list[str] = []
 
-    def t(name, args=None):
+    def tool(name: str, args: dict | None) -> dict:
         trace.append(name)
         return run_tool(ctx, name, args or {})
 
-    if m := _BUY.search(text):
-        out = t("prepare_buy_chog", {"chog_amount": float(m.group(1))})
-        if "error" in out:
-            return f"Ribbit, can't do that: {out['error']}", trace
-        return (f"Ready! {out['chog_amount']:g} CHOG will cost about {out['mon_cost']:.4f} MON. "
-                "Hit Confirm on the card and sign in your wallet."), trace
-    if m := _JOIN.search(text):
-        out = t("join_event", {"event_id": int(m.group(1))})
-        return (f"You're in: {out['event']}." if out.get("ok") else f"Couldn't join: {out['error']}"), trace
-    if "balance" in text or "how much" in text or "own" in text:
-        b = t("get_balances")
-        return f"Your wallet holds {b['MON']:g} MON and {b['CHOG']:g} CHOG.", trace
-    if "quest" in text and "event" not in text:
-        qs = t("list_quests")["quests"]
-        lines = [f"#{q['id']} {q['title']} ({q['status'].replace('_', ' ')})" for q in qs]
-        return "Quests:\n" + "\n".join(lines), trace
-    if "event" in text and "today" not in text:
-        es = t("list_events")["events"]
-        if not es:
-            return "No upcoming events right now.", trace
-        return "Upcoming events:\n" + "\n".join(f"#{e['id']} {e['title']}, {e['starts_at'][:16].replace('T', ' ')} UTC"
-                                                + (" (joined)" if e["joined"] else "") for e in es), trace
-    if any(w in text for w in ("who are you", "about you", "profile", "history", "achievement")):
-        p = t("get_chog_profile")
-        s = p["stats"]
-        return (f"I'm {p['name']}. {s['quests_completed']} quests, {s['events_attended']} events, "
-                f"{s['achievements']} achievements so far."), trace
-    d = t("get_ecosystem_today")
-    parts = [f"Event: {e['title']}" + (" (joined)" if e["joined"] else "") for e in d["events"][:3]]
-    parts += [f"Quest: {q['title']}" for q in d["open_quests"][:3]]
-    if not parts:
-        return "Quiet day in Chog land. Nothing open right now.", trace
-    return f"Here's what you can do today:\n" + "\n".join(parts), trace
+    return respond(text, last_assistant, tool, f"Chog #{ctx.chog.token_id}"), trace
 
 
 def _update_memory(ctx: AgentContext, mem, messages: list[dict]) -> None:

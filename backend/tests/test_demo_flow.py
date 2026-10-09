@@ -83,7 +83,7 @@ def test_full_demo(client):
     assert c.post(f"/events/{meme_wars['id']}/join", headers=h, json={"token_id": 742}).json()["joined"]
     # joining the call through the agent auto-completes the "join the call" quest
     out = chat(c, h, 742, f"Register me for event {call['id']}")
-    assert "You're in" in out["reply"]
+    assert "you're in" in out["reply"].lower()
 
     # Scene 4 — meme quest, then admin approval writes the achievement on-chain
     quests = {q["slug"]: q for q in c.get("/quests", params={"token_id": 742}).json()["quests"]}
