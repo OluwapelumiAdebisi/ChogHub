@@ -10,9 +10,19 @@ class Base(DeclarativeBase):
     pass
 
 
+def normalize_url(url: str) -> str:
+    """Hosts like Railway hand out postgres:// or postgresql:// URLs; use the psycopg 3 driver."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
+
+
 def make_engine(url: str):
-    kwargs = {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {}
-    return create_engine(url, **kwargs)
+    url = normalize_url(url)
+    if url.startswith("sqlite"):
+        return create_engine(url, connect_args={"check_same_thread": False})
+    return create_engine(url, pool_pre_ping=True)
 
 
 engine = make_engine(get_settings().database_url)

@@ -27,7 +27,6 @@ The backend has an in-memory chain (`CHAIN_MODE=fake`) so you can build UI witho
 cd backend
 pip install -r requirements.txt
 cp .env.example .env            # set ADMIN_WALLETS to your wallet address
-python seed.py
 uvicorn app.main:app --reload --port 8000
 
 # Web (new terminal)
@@ -55,6 +54,21 @@ Connect a wallet, sign in, click **Mint a test Chog**, and talk to it. In fake m
 5. In the app, **Mint a test Chog** sends a real `mint()` from your wallet.
 
 To try it fully locally instead, run `anvil --chain-id 10143`, deploy with `--rpc-url http://127.0.0.1:8545`, set `RPC_URL=http://127.0.0.1:8545` in the backend and `NEXT_PUBLIC_NETWORK=local` in the web app.
+
+## Deploying (testnet demo)
+
+**Backend on Railway**
+1. New project → Deploy from GitHub repo → this repo. In the service settings set **Root Directory** to `backend`. Railway reads `backend/railway.json` for the start command and health check.
+2. Add a **PostgreSQL** database to the project, then on the backend service add the variable `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`.
+3. Add the rest of the variables from `backend/.env.example`: `NETWORK=testnet`, `CHAIN_MODE=web3`, the four contract addresses, `ATTESTER_PRIVATE_KEY`, a long random `JWT_SECRET`, `ADMIN_WALLETS`, and optionally `ANTHROPIC_API_KEY`.
+4. Settings → Networking → **Generate Domain**. Check `https://<that domain>/health`.
+
+**Website on Vercel**
+1. Add New → Project → import this repo, set **Root Directory** to `web`.
+2. Environment variables: `NEXT_PUBLIC_API_URL` = the Railway URL, `NEXT_PUBLIC_NETWORK=testnet`, and optionally `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`.
+3. Deploy, then go back to Railway and set `SIWE_DOMAIN` to the Vercel host (e.g. `choghub.vercel.app`, no `https://`) and `CORS_ORIGINS` to the full Vercel URL (`https://choghub.vercel.app`).
+
+Demo events and quests load on first boot (`SEED_DEMO=true`).
 
 ## Switching to mainnet
 

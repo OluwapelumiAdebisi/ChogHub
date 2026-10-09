@@ -10,3 +10,4 @@ contracts/lib/
 __pycache__/
 .pytest_cache/
 *.tsbuildinfo
+.DS_Store

@@ -5,7 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .config import get_settings
-from .db import init_db
+from .db import SessionLocal, init_db
+from .seed_data import seed
 from .deps import chain_dep
 from .routers import admin, auth, hub
 
@@ -15,6 +16,9 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    if settings.seed_demo:
+        with SessionLocal() as db:
+            seed(db)
     yield
 
 

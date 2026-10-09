@@ -7,4 +7,4 @@ anthropic>=0.40
 pyjwt>=2.9
 httpx>=0.27
 pytest>=8.0
-# For a Postgres DATABASE_URL (Supabase, Railway), also install: psycopg[binary]>=3.2
+psycopg[binary]>=3.2

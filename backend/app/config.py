@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     attester_private_key: str | None = None
 
     database_url: str = "sqlite:///./choghub.db"
+    seed_demo: bool = True  # load the demo events and quests on startup if missing
     jwt_secret: str = "dev-only-change-me-to-a-long-random-string"
     jwt_ttl_hours: int = 24
     siwe_domain: str = "localhost:3000"

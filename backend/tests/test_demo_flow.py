@@ -28,7 +28,7 @@ def client():
     get_settings.cache_clear()
     from app import main
     from app.db import SessionLocal, init_db
-    from seed import seed
+    from app.seed_data import seed
 
     init_db()
     with SessionLocal() as db:

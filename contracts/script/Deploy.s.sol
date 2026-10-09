@@ -18,7 +18,8 @@ contract Deploy is Script {
         uint256 rate = vm.envOr("CHOG_PER_MON", uint256(1_000)) * 1 ether;
 
         vm.startBroadcast();
-        address deployer = msg.sender;
+        // The broadcasting account, whether it came from --private-key, --account or --sender.
+        (, address deployer,) = vm.readCallers();
 
         ChogRegistry registry = new ChogRegistry(deployer, attester);
         console2.log("CHOG_REGISTRY_ADDRESS=", address(registry));
