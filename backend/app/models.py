@@ -101,6 +101,7 @@ class Quest(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     achievement: Mapped[Achievement] = relationship()
+    event: Mapped["Event | None"] = relationship()
 
 
 class QuestSubmission(Base):

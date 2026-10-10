@@ -46,17 +46,29 @@ class EventIn(BaseModel):
     link: str | None = None
 
 
+# Traits the Chog collection actually has (MockChog on testnet). A quest can only gate on these.
+TRAIT_VALUES = {
+    "hat": {"None", "Pirate Hat", "Crown", "Beanie", "Party Hat"},
+    "mood": {"Chaotic", "Sleepy", "Hyped", "Mischievous"},
+    "background": {"Purple", "Night", "Mint", "Sunset"},
+}
+
+
 class QuestIn(BaseModel):
     slug: str = Field(pattern="^[a-z0-9-]{3,80}$")
-    title: str
-    description: str = ""
+    title: str = Field(min_length=3, max_length=200)
+    description: str = Field(default="", max_length=2000)
     verify_type: str = Field(default="manual", pattern="^(manual|auto_buy|auto_event)$")
     event_id: int | None = None
-    trait_requirement: dict | None = None
-    achievement_slug: str
-    achievement_name: str
-    achievement_icon: str = "trophy"
+    trait_requirement: dict[str, str] | None = None
+    achievement_slug: str = Field(pattern="^[a-z0-9-]{3,80}$")
+    achievement_name: str = Field(min_length=2, max_length=120)
+    achievement_icon: str = Field(default="trophy", pattern="^(frog|mic|coin|anchor|trophy)$")
     achievement_kind: str = Field(default="quest", pattern="^(quest|win|contribution)$")
+
+
+class QuestActiveIn(BaseModel):
+    active: bool
 
 
 class ReviewIn(BaseModel):
