@@ -9,7 +9,8 @@ class VerifyIn(BaseModel):
 
 
 class JoinIn(BaseModel):
-    token_id: int
+    # Omit to join an "Everyone" event without a Chog.
+    token_id: int | None = None
 
 
 class SubmitIn(BaseModel):

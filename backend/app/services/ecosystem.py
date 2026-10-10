@@ -12,6 +12,7 @@ from ..models import (
     Chog,
     Event,
     EventParticipation,
+    EventRSVP,
     PendingAction,
     Quest,
     QuestSubmission,
@@ -99,11 +100,23 @@ def _safe(fn, default):
 # --------------------------------------------------------------------------- events
 
 
-def event_dict(db: Session, e: Event, chog: Chog | None = None) -> dict:
-    count = db.scalar(select(func.count()).select_from(EventParticipation).where(EventParticipation.event_id == e.id))
-    joined = bool(chog) and db.scalar(
-        select(EventParticipation.id).where(EventParticipation.event_id == e.id, EventParticipation.chog_id == chog.id)
-    ) is not None
+def _attendance(db: Session, e: Event) -> int:
+    chogs = db.scalar(select(func.count()).select_from(EventParticipation).where(EventParticipation.event_id == e.id))
+    wallets = db.scalar(select(func.count()).select_from(EventRSVP).where(EventRSVP.event_id == e.id))
+    return chogs + wallets
+
+
+def event_dict(db: Session, e: Event, chog: Chog | None = None, wallet: str | None = None) -> dict:
+    count = _attendance(db, e)
+    joined = False
+    if chog:
+        joined = db.scalar(select(EventParticipation.id).where(
+            EventParticipation.event_id == e.id, EventParticipation.chog_id == chog.id)) is not None
+    if not joined and wallet:
+        w = wallet.lower()
+        joined = (db.scalar(select(EventRSVP.id).where(EventRSVP.event_id == e.id, EventRSVP.wallet == w)) is not None
+                  or db.scalar(select(EventParticipation.id).where(
+                      EventParticipation.event_id == e.id, EventParticipation.wallet == w)) is not None)
     return {
         "id": e.id, "slug": e.slug, "title": e.title, "description": e.description,
         "starts_at": e.starts_at.isoformat(), "ends_at": e.ends_at.isoformat() if e.ends_at else None,
@@ -120,20 +133,25 @@ def list_events(db: Session, upcoming_only: bool = True) -> list[Event]:
     return list(db.scalars(q))
 
 
-def join_event(db: Session, chain: ChainService, wallet: str, event_id: int, token_id: int) -> EventParticipation:
-    chog = require_holder(db, chain, wallet, token_id)
+def join_event(db: Session, chain: ChainService, wallet: str, event_id: int,
+               token_id: int | None) -> EventParticipation | EventRSVP:
+    """Holders-only events: the wallet must own the Chog, checked live on Monad.
+    Open events: any signed-in wallet. Joining with a Chog still records attendance
+    on-chain and counts for quests; joining without one is a simple RSVP."""
     e = db.get(Event, event_id)
     if not e:
         raise EcoError("Event not found", 404)
+    if token_id is None:
+        if e.visibility == "holder":
+            raise EcoError("This event is for Chog holders only. Join with a wallet that holds a Chog.", 403)
+        return _rsvp(db, e, wallet)
+    chog = require_holder(db, chain, wallet, token_id)
     existing = db.scalar(
         select(EventParticipation).where(EventParticipation.event_id == e.id, EventParticipation.chog_id == chog.id)
     )
     if existing:
         return existing
-    if e.capacity:
-        n = db.scalar(select(func.count()).select_from(EventParticipation).where(EventParticipation.event_id == e.id))
-        if n >= e.capacity:
-            raise EcoError("This event is full", 409)
+    _check_capacity(db, e)
     p = EventParticipation(event_id=e.id, chog_id=chog.id, wallet=wallet.lower())
     db.add(p)
     db.commit()
@@ -142,6 +160,23 @@ def join_event(db: Session, chain: ChainService, wallet: str, event_id: int, tok
     db.commit()
     _auto_complete(db, chain, chog, wallet, verify_type="auto_event", event_id=e.id)
     return p
+
+
+def _check_capacity(db: Session, e: Event) -> None:
+    if e.capacity and _attendance(db, e) >= e.capacity:
+        raise EcoError("This event is full", 409)
+
+
+def _rsvp(db: Session, e: Event, wallet: str) -> EventRSVP:
+    w = wallet.lower()
+    existing = db.scalar(select(EventRSVP).where(EventRSVP.event_id == e.id, EventRSVP.wallet == w))
+    if existing:
+        return existing
+    _check_capacity(db, e)
+    r = EventRSVP(event_id=e.id, wallet=w)
+    db.add(r)
+    db.commit()
+    return r
 
 
 # --------------------------------------------------------------------------- quests

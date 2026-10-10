@@ -1,31 +1,37 @@
 "use client";
 
+import { useConnectModal } from "@rainbow-me/rainbowkit";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useAccount } from "wagmi";
 import { CardGrid, QuestCard, startsIn, when } from "@/components/Cards";
 import { api, qs } from "@/lib/api";
 import { useSession } from "@/lib/session";
 import type { ChogEvent } from "@/lib/types";
 
 export default function EventDetail({ params }: { params: { id: string } }) {
-  const { token, activeTokenId } = useSession();
+  const { token, activeTokenId, chogs, signIn, signingIn, error: signInError, config } = useSession();
+  const { isConnected } = useAccount();
+  const { openConnectModal } = useConnectModal();
   const [e, setE] = useState<ChogEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
 
   const load = useCallback(() => {
-    api<ChogEvent>(`/events/${params.id}${qs({ token_id: activeTokenId })}`)
+    api<ChogEvent>(`/events/${params.id}${qs({ token_id: activeTokenId })}`, { token })
       .then(setE)
       .catch((err) => setError(err.message));
-  }, [params.id, activeTokenId]);
+  }, [params.id, activeTokenId, token]);
   useEffect(load, [load]);
 
+  const hasChog = chogs.length > 0 && activeTokenId != null;
+
   async function join() {
-    if (!activeTokenId) return;
     setJoining(true);
     setError(null);
     try {
-      await api(`/events/${params.id}/join`, { token, body: { token_id: activeTokenId } });
+      // With a Chog: attendance goes on-chain. Without one: open events only.
+      await api(`/events/${params.id}/join`, { token, body: hasChog ? { token_id: activeTokenId } : {} });
       load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't join");
@@ -67,15 +73,34 @@ export default function EventDetail({ params }: { params: { id: string } }) {
 
         <div className="mt-8 flex flex-wrap items-center gap-3">
           {e.joined ? (
-            <span className="rounded-full border-3 border-ink bg-mint px-5 py-2.5 text-[18px] font-extrabold">Chog #{activeTokenId} is in!</span>
-          ) : token && activeTokenId ? (
+            <span className="rounded-full border-3 border-ink bg-mint px-5 py-2.5 text-[18px] font-extrabold">
+              {hasChog ? `Chog #${activeTokenId} is in!` : "You're in!"}
+            </span>
+          ) : !isConnected ? (
+            <button className="btn-primary" onClick={openConnectModal}>
+              Connect wallet to join
+            </button>
+          ) : !token ? (
+            <button className="btn-primary" onClick={signIn} disabled={signingIn}>
+              {signingIn ? "Check your wallet" : "Sign in to join"}
+            </button>
+          ) : hasChog ? (
             <button className="btn-primary" onClick={join} disabled={joining}>
               {joining ? "Joining" : `Join with Chog #${activeTokenId}`}
             </button>
+          ) : e.visibility === "public" ? (
+            <button className="btn-primary" onClick={join} disabled={joining}>
+              {joining ? "Joining" : "Join event"}
+            </button>
           ) : (
-            <Link href="/hub" className="btn-primary">
-              Sign in to join
-            </Link>
+            <div className="rounded-[18px] border-3 border-ink bg-sun px-4 py-3 font-semibold">
+              Only Chog holders can join this one, and this wallet doesn't hold a Chog.{" "}
+              {config?.network === "testnet" && (
+                <Link href="/hub" className="font-extrabold underline decoration-[3px]">
+                  Get a free test Chog
+                </Link>
+              )}
+            </div>
           )}
           {e.link && (
             <a href={e.link} target="_blank" rel="noreferrer" className="btn-quiet">
@@ -83,9 +108,12 @@ export default function EventDetail({ params }: { params: { id: string } }) {
             </a>
           )}
         </div>
-        {error && (
+        {!e.joined && token && hasChog && e.visibility === "public" && (
+          <p className="mt-3 text-[15px] font-medium">Joining with your Chog records it on Monad and counts towards its quests.</p>
+        )}
+        {(error || signInError) && (
           <p className="mt-4 font-semibold text-alarm" role="alert">
-            {error}
+            {error || signInError}
           </p>
         )}
       </article>

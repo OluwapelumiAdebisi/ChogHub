@@ -126,3 +126,49 @@ def test_bad_quests_are_refused(client, patch, expect):
     r = client.post("/admin/quests", headers=h_admin, json=q)
     assert r.status_code in (409, 422), r.text
     assert expect in r.text
+
+
+def _event(client, h_admin, slug, visibility, capacity=None):
+    body = {"slug": slug, "title": slug.replace("-", " ").title(), "starts_at": "2027-01-01T10:00:00",
+            "visibility": visibility, "capacity": capacity}
+    r = client.post("/admin/events", headers=h_admin, json=body)
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+def test_holder_events_need_a_chog_open_events_dont(client):
+    _, h_admin = login(client, ADMIN)
+    _, h_fan = login(client, HOLDER)  # signed in, but holds no Chog yet
+    holders = _event(client, h_admin, "holders-party", "holder")
+    open_ev = _event(client, h_admin, "open-mic", "public")
+
+    # no Chog: refused from the holders-only event, welcome at the open one
+    r = client.post(f"/events/{holders}/join", headers=h_fan, json={})
+    assert r.status_code == 403 and "holders only" in r.json()["detail"]
+    r = client.post(f"/events/{open_ev}/join", headers=h_fan, json={})
+    assert r.status_code == 200 and r.json()["with_chog"] is False and r.json()["onchain_tx"] is None
+    assert client.post(f"/events/{open_ev}/join", headers=h_fan, json={}).status_code == 200  # twice is fine
+    ev = client.get(f"/events/{open_ev}", headers=h_fan).json()
+    assert ev["joined"] is True and ev["participants"] == 1
+    assert client.get(f"/events/{open_ev}").json()["joined"] is False  # anonymous viewer
+
+    # claiming someone else's Chog doesn't work either
+    client.post("/dev/mint", json={"wallet": ADMIN.address, "token_id": 5})
+    r = client.post(f"/events/{holders}/join", headers=h_fan, json={"token_id": 5})
+    assert r.status_code == 403 and "does not hold" in r.json()["detail"]
+
+    # with their own Chog they get in, recorded on-chain against the token
+    client.post("/dev/mint", json={"wallet": HOLDER.address, "token_id": 6})
+    r = client.post(f"/events/{holders}/join", headers=h_fan, json={"token_id": 6})
+    assert r.status_code == 200 and r.json()["with_chog"] is True and r.json()["onchain_tx"]
+    assert client.get("/chogs/6").json()["stats"]["events_attended"] == 1
+
+
+def test_capacity_counts_everyone(client):
+    _, h_admin = login(client, ADMIN)
+    _, h_fan = login(client, HOLDER)
+    tiny = _event(client, h_admin, "tiny-meetup", "public", capacity=1)
+    assert client.post(f"/events/{tiny}/join", headers=h_fan, json={}).status_code == 200
+    client.post("/dev/mint", json={"wallet": ADMIN.address, "token_id": 8})
+    r = client.post(f"/events/{tiny}/join", headers=h_admin, json={"token_id": 8})
+    assert r.status_code == 409 and "full" in r.json()["detail"]

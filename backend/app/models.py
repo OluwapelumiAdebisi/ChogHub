@@ -75,6 +75,19 @@ class EventParticipation(Base):
     event: Mapped[Event] = relationship(back_populates="participations")
 
 
+class EventRSVP(Base):
+    """A wallet joining an "Everyone" event without a Chog. No on-chain record:
+    reputation belongs to Chogs, so only Chog joins count towards it."""
+
+    __tablename__ = "event_rsvps"
+    __table_args__ = (UniqueConstraint("event_id", "wallet"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id"))
+    wallet: Mapped[str] = mapped_column(String(42))
+    joined_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class Achievement(Base):
     __tablename__ = "achievements"
 

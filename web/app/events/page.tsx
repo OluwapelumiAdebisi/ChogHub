@@ -13,15 +13,15 @@ const FILTERS = [
 ] as const;
 
 export default function Events() {
-  const { activeTokenId } = useSession();
+  const { activeTokenId, token } = useSession();
   const [events, setEvents] = useState<ChogEvent[] | null>(null);
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["id"]>("all");
 
   useEffect(() => {
-    api<{ events: ChogEvent[] }>(`/events${qs({ token_id: activeTokenId })}`)
+    api<{ events: ChogEvent[] }>(`/events${qs({ token_id: activeTokenId })}`, { token })
       .then((r) => setEvents(r.events))
       .catch(() => setEvents([]));
-  }, [activeTokenId]);
+  }, [activeTokenId, token]);
 
   const shown = (events ?? []).filter((e) => filter === "all" || e.visibility === filter);
   return (

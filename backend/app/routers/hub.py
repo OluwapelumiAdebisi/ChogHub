@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from ..config import Settings, get_settings
 from ..db import get_db
 from ..deps import chain_dep, current_wallet, optional_wallet
-from ..models import Event, Quest
+from ..models import Event, EventParticipation, Quest
 from ..schemas import ChatIn, ConfirmIn, JoinIn, SubmitIn
 from ..services import agent
 from ..services import ecosystem as eco
@@ -62,20 +62,20 @@ def chog(token_id: int, db: Session = Depends(get_db), chain: ChainService = Dep
 
 @router.get("/events")
 def events(token_id: int | None = None, include_past: bool = False, db: Session = Depends(get_db),
-           chain: ChainService = Depends(chain_dep)):
+           chain: ChainService = Depends(chain_dep), wallet: str | None = Depends(optional_wallet)):
     c = _maybe_chog(db, chain, token_id)
-    return {"events": [eco.event_dict(db, e, c) for e in eco.list_events(db, upcoming_only=not include_past)]}
+    return {"events": [eco.event_dict(db, e, c, wallet) for e in eco.list_events(db, upcoming_only=not include_past)]}
 
 
 @router.get("/events/{event_id}")
 def event(event_id: int, token_id: int | None = None, db: Session = Depends(get_db),
-          chain: ChainService = Depends(chain_dep)):
+          chain: ChainService = Depends(chain_dep), wallet: str | None = Depends(optional_wallet)):
     e = db.get(Event, event_id)
     if not e:
         raise HTTPException(404, "Event not found")
     c = _maybe_chog(db, chain, token_id)
     quests = [eco.quest_dict(q, s) for q, s in eco.quests_for(db, c) if q.event_id == e.id]
-    return {**eco.event_dict(db, e, c), "quests": quests}
+    return {**eco.event_dict(db, e, c, wallet), "quests": quests}
 
 
 @router.post("/events/{event_id}/join")
@@ -85,7 +85,9 @@ def join(event_id: int, body: JoinIn, wallet: str = Depends(current_wallet), db:
         p = eco.join_event(db, chain, wallet, event_id, body.token_id)
     except eco.EcoError as e:
         raise _http(e) from e
-    return {"joined": True, "event_id": p.event_id, "onchain_tx": p.onchain_tx}
+    with_chog = isinstance(p, EventParticipation)
+    return {"joined": True, "event_id": p.event_id, "with_chog": with_chog,
+            "onchain_tx": p.onchain_tx if with_chog else None}
 
 
 # --------------------------------------------------------------------------- quests
