@@ -25,7 +25,7 @@ type Session = {
 const Ctx = createContext<Session | null>(null);
 const KEY = "choghub.session";
 
-function load(): { token: string; wallet: string; isAdmin: boolean; active?: number } | null {
+function load(): { token: string; wallet: string; active?: number } | null {
   try {
     const raw = localStorage.getItem(KEY);
     return raw ? JSON.parse(raw) : null;
@@ -59,7 +59,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (s) {
       setToken(s.token);
       setWallet(s.wallet);
-      setIsAdmin(s.isAdmin);
       if (s.active) setActive(s.active);
     }
   }, []);
@@ -69,6 +68,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (wallet && address && address.toLowerCase() !== wallet) {
       setToken(null);
       setWallet(null);
+      setIsAdmin(false);
       setChogs([]);
       save(null);
     }
@@ -91,6 +91,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshChogs();
   }, [refreshChogs]);
+
+  // Admin status always comes from the server, never from what the browser saved.
+  useEffect(() => {
+    if (!token) {
+      setIsAdmin(false);
+      return;
+    }
+    api<{ is_admin: boolean }>("/auth/me", { token })
+      .then((r) => setIsAdmin(r.is_admin))
+      .catch(() => setIsAdmin(false));
+  }, [token]);
 
   const signIn = useCallback(async () => {
     if (!address || !isConnected) return;
@@ -117,7 +128,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setToken(r.token);
       setWallet(r.wallet);
       setIsAdmin(r.is_admin);
-      save({ token: r.token, wallet: r.wallet, isAdmin: r.is_admin });
+      save({ token: r.token, wallet: r.wallet });
     } catch (e) {
       setError(e instanceof Error ? e.message.split("\n")[0] : "Sign-in failed");
     } finally {
@@ -128,6 +139,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signOut = useCallback(() => {
     setToken(null);
     setWallet(null);
+    setIsAdmin(false);
     setChogs([]);
     save(null);
     disconnect();
@@ -136,9 +148,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const setActiveTokenId = useCallback(
     (id: number) => {
       setActive(id);
-      if (token && wallet) save({ token, wallet, isAdmin, active: id });
+      if (token && wallet) save({ token, wallet, active: id });
     },
-    [token, wallet, isAdmin],
+    [token, wallet],
   );
 
   const value = useMemo(

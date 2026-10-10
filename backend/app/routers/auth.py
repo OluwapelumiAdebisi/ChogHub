@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 
 from ..config import Settings, get_settings
 from ..db import get_db
-from ..models import User
+from ..deps import current_wallet, is_admin
 from ..schemas import VerifyIn
 from ..services.auth import AuthError, issue_nonce, make_token, verify_siwe
 
@@ -21,6 +21,10 @@ def verify(body: VerifyIn, db: Session = Depends(get_db), s: Settings = Depends(
         wallet = verify_siwe(db, s, body.message, body.signature)
     except AuthError as e:
         raise HTTPException(401, str(e)) from e
-    user = db.get(User, wallet)
-    return {"token": make_token(s, wallet), "wallet": wallet,
-            "is_admin": wallet in s.admin_set or bool(user and user.is_admin)}
+    return {"token": make_token(s, wallet), "wallet": wallet, "is_admin": is_admin(s, wallet)}
+
+
+@router.get("/me")
+def me(wallet: str = Depends(current_wallet), s: Settings = Depends(get_settings)):
+    """Who the session belongs to, and whether they're an admin right now."""
+    return {"wallet": wallet, "is_admin": is_admin(s, wallet)}

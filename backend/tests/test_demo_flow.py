@@ -26,16 +26,25 @@ def client():
     get_settings.cache_clear()
     os.environ["ADMIN_WALLETS"] = ADMIN.address.lower()
     get_settings.cache_clear()
+    from sqlalchemy.orm import sessionmaker
+
+    from app import db as dbmod
     from app import main
-    from app.db import SessionLocal, init_db
     from app.seed_data import seed
 
-    init_db()
-    with SessionLocal() as db:
+    # Own engine for this module, whatever other test files configured first.
+    engine = dbmod.make_engine("sqlite:///./test_choghub.db")
+    old = (dbmod.engine, dbmod.SessionLocal)
+    dbmod.engine, dbmod.SessionLocal = engine, sessionmaker(bind=engine, expire_on_commit=False)
+    dbmod.init_db(engine)
+    with dbmod.SessionLocal() as db:
         seed(db)
     with TestClient(main.app) as c:
         yield c
-    os.remove("test_choghub.db")
+    dbmod.engine, dbmod.SessionLocal = old
+    engine.dispose()
+    if os.path.exists("test_choghub.db"):
+        os.remove("test_choghub.db")
 
 
 def siwe_login(c: TestClient, acct) -> dict:

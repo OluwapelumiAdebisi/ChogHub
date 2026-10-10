@@ -1,9 +1,6 @@
 from fastapi import Depends, Header, HTTPException
-from sqlalchemy.orm import Session
 
 from .config import Settings, get_settings
-from .db import get_db
-from .models import User
 from .services.auth import AuthError, read_token
 from .services.chain import ChainService, get_chain
 
@@ -38,9 +35,12 @@ def optional_wallet(authorization: str | None = Header(default=None), s: Setting
         return None
 
 
-def admin_wallet(wallet: str = Depends(current_wallet), db: Session = Depends(get_db),
-                 s: Settings = Depends(get_settings)) -> str:
-    user = db.get(User, wallet)
-    if wallet not in s.admin_set and not (user and user.is_admin):
+def is_admin(s: Settings, wallet: str | None) -> bool:
+    """ADMIN_WALLETS decides, every request. Remove a wallet there and it loses access at once."""
+    return bool(wallet) and wallet.lower() in s.admin_set
+
+
+def admin_wallet(wallet: str = Depends(current_wallet), s: Settings = Depends(get_settings)) -> str:
+    if not is_admin(s, wallet):
         raise HTTPException(403, "Admins only")
     return wallet
