@@ -9,7 +9,7 @@ ChogHub turns a Chog NFT into your identity, your AI agent and your on-chain rep
 ## Try it
 
 - **Live app:** https://chog-hub.vercel.app (Monad testnet)
-- **Demo video (1:40):** https://chog-hub.vercel.app/demo
+- **Demo video (3 min, story + live app):** https://chog-hub.vercel.app/demo
 
 1. Connect a wallet on Monad testnet (chain ID 10143) and sign the free sign-in message. No gas.
 2. No Chog? Click **Mint a test Chog**. It's free on testnet (you only need a little testnet MON for gas, from https://testnet.monad.xyz).

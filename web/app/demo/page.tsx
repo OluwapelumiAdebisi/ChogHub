@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "ChogHub demo",
-  description: "We didn't give an NFT utility. We gave the NFT a job. A 100-second tour of ChogHub on Monad.",
+  description: "We didn't give an NFT utility. We gave the NFT a job. A 3-minute tour of ChogHub on Monad: the story, then the live app.",
 };
 
 export default function Demo() {

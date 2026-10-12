@@ -62,7 +62,7 @@ export function ChatPanel({ tokenId, onChange }: { tokenId: number; onChange?: (
           ) : (
             <div key={i} className="flex max-w-full flex-col gap-3 self-start">
               <div className="max-w-[88%] whitespace-pre-line rounded-[22px] rounded-bl-[4px] border-3 border-ink bg-white px-4 py-3 font-semibold shadow-hard">
-                {m.content}
+                {rich(m.content)}
               </div>
               {m.actions?.map((a) => <ConfirmTxCard key={a.id} action={a} onDone={() => onChange?.()} />)}
             </div>
@@ -113,4 +113,13 @@ export function ChatPanel({ tokenId, onChange }: { tokenId: number; onChange?: (
       </form>
     </section>
   );
+}
+
+// Claude replies use light Markdown: **bold** and *actions*. Render those instead of showing the asterisks.
+function rich(text: string) {
+  return text.split(/(\*\*[^*]+\*\*|\*[^*\n]+\*)/g).map((part, i) => {
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) return <strong key={i} className="font-extrabold">{part.slice(2, -2)}</strong>;
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) return <em key={i}>{part.slice(1, -1)}</em>;
+    return part;
+  });
 }
