@@ -1,8 +1,35 @@
 # ChogHub
 
+![ChogHub: your Chog has a job now](docs/cover.jpg)
+
 **We didn't give an NFT utility. We gave the NFT a job.**
 
-ChogHub is one place to own, use and interact with your Chog on Monad. Connect your wallet and your Chog wakes up as an AI agent: it finds events, runs quests and prepares on-chain actions for you to sign. Every quest, event and achievement is recorded on-chain against the NFT's token ID, so when a Chog is sold its reputation goes with it while the old owner's private chats stay behind.
+ChogHub turns a Chog NFT into your identity, your AI agent and your on-chain reputation on Monad. Connect your wallet and your Chog wakes up: it finds events, runs quests and prepares on-chain actions for you to sign. Every quest, event and badge is recorded on-chain against the NFT's token ID, so when a Chog is sold its reputation goes with it, while the old owner's private chats stay behind.
+
+## Try it
+
+- **Live app:** https://chog-hub.vercel.app (Monad testnet)
+- **Demo video (1:40):** [docs/choghub-demo.mp4](docs/choghub-demo.mp4)
+
+1. Connect a wallet on Monad testnet (chain ID 10143) and sign the free sign-in message. No gas.
+2. No Chog? Click **Mint a test Chog**. It's free on testnet (you only need a little testnet MON for gas, from https://testnet.monad.xyz).
+3. Talk to your Chog: "what's on today?", "what should I do first?", "buy me 10 CHOG".
+4. Join an event, start a quest, and watch the badges land on your Chog's card and story.
+
+The API runs on a free server that can take up to a minute to wake if nobody has used it for a while. If the first load is slow, give it a moment.
+
+## Contracts on Monad testnet
+
+| Contract | Address |
+|---|---|
+| MockChog (ERC-721, the Chog NFT) | [`0xd18949A7Ed24eeD10364CBB5AAF01306dE2Cc4b0`](https://testnet.monadvision.com/address/0xd18949A7Ed24eeD10364CBB5AAF01306dE2Cc4b0) |
+| MockChogToken (ERC-20, CHOG) | [`0xc7e3ef4Fe9f459fcF12c8bAbe523783e9075468e`](https://testnet.monadvision.com/address/0xc7e3ef4Fe9f459fcF12c8bAbe523783e9075468e) |
+| ChogVendor (buy CHOG with MON) | [`0xe63b00549fA071B309f77f149e9A1147B18fa8f8`](https://testnet.monadvision.com/address/0xe63b00549fA071B309f77f149e9A1147B18fa8f8) |
+| ChogRegistry (badges and history per token) | [`0xfAd9B75c0C3AFBE042dF4E4F33AE567383950c67`](https://testnet.monadvision.com/address/0xfAd9B75c0C3AFBE042dF4E4F33AE567383950c67) |
+
+On mainnet the registry points at the official Chog collection and the real CHOG token (`0x350035555E10d9AfAF1566AaebfCeD5BA6C27777`); see [Switching to mainnet](#switching-to-mainnet).
+
+![How ChogHub works](docs/how-it-works.jpg)
 
 ```
 choghub/
@@ -55,20 +82,14 @@ Connect a wallet, sign in, click **Mint a test Chog**, and talk to it. In fake m
 
 To try it fully locally instead, run `anvil --chain-id 10143`, deploy with `--rpc-url http://127.0.0.1:8545`, set `RPC_URL=http://127.0.0.1:8545` in the backend and `NEXT_PUBLIC_NETWORK=local` in the web app.
 
-## Deploying (testnet demo)
+## Deploying (how the live demo runs)
 
-**Backend on Railway**
-1. New project → Deploy from GitHub repo → this repo. In the service settings set **Root Directory** to `backend`. Railway reads `backend/railway.json` for the start command and health check.
-2. Add a **PostgreSQL** database to the project, then on the backend service add the variable `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`.
-3. Add the rest of the variables from `backend/.env.example`: `NETWORK=testnet`, `CHAIN_MODE=web3`, the four contract addresses, `ATTESTER_PRIVATE_KEY`, a long random `JWT_SECRET`, `ADMIN_WALLETS`, and optionally `ANTHROPIC_API_KEY`.
-4. Settings → Networking → **Generate Domain**. Check `https://<that domain>/health`.
+- **Contracts:** Foundry, deployed to Monad testnet (addresses above).
+- **Backend:** FastAPI on Render (free web service, root directory `backend`, start command from `backend/Procfile`) with a Neon Postgres database. Set the variables from `backend/.env.example`: `NETWORK=testnet`, `CHAIN_MODE=web3`, the four contract addresses, `ATTESTER_PRIVATE_KEY`, `DATABASE_URL` (Neon), a long random `JWT_SECRET`, `ADMIN_WALLETS`, `SIWE_DOMAIN` (the frontend host, no `https://`), `CORS_ORIGINS` (the full frontend URL) and `ANTHROPIC_API_KEY`.
+- **Frontend:** Next.js on Vercel (root directory `web`) with `NEXT_PUBLIC_API_URL` pointing at the backend and `NEXT_PUBLIC_NETWORK=testnet`.
+- **Keep-awake:** `.github/workflows/keepalive.yml` pings `/health` every 10 minutes so the free backend doesn't sleep.
 
-**Website on Vercel**
-1. Add New → Project → import this repo, set **Root Directory** to `web`.
-2. Environment variables: `NEXT_PUBLIC_API_URL` = the Railway URL, `NEXT_PUBLIC_NETWORK=testnet`, and optionally `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`.
-3. Deploy, then go back to Railway and set `SIWE_DOMAIN` to the Vercel host (e.g. `choghub.vercel.app`, no `https://`) and `CORS_ORIGINS` to the full Vercel URL (`https://choghub.vercel.app`).
-
-Demo events and quests load on first boot (`SEED_DEMO=true`).
+Demo events and quests load on first boot (`SEED_DEMO=true`). Only wallets in `ADMIN_WALLETS` can create events and quests or approve quest proofs.
 
 ## Switching to mainnet
 
